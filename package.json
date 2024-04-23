@@ -1,0 +1,14 @@
+{
+  "name": "com.darknaku.attribute.getcomponent",
+  "displayName": "GetComponent Attribute",
+  "version": "0.0.1",
+  "unity": "2018.3",
+  "author": "DarkNaku",
+  "description": "DarkNaku's GetComponent Attribute Package",
+  "dependencies": {
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DarkNaku/Attribute_GetComponent.git"
+  }
+}
