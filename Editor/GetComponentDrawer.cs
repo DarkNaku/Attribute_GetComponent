@@ -97,6 +97,31 @@ namespace DarkNaku.Attribute
 
             return null;
         }
+
+        protected List<GameObject> GetGameObjectsInChild(Transform root)
+        {
+            var queue = new Queue<Transform>();
+            var gameObjects = new List<GameObject>();
+            
+            for (var i = 0; i < root.childCount; i++)
+            {
+                queue.Enqueue(root.GetChild(i));
+            }
+        
+            while (queue.Count > 0)
+            {
+                var item = queue.Dequeue();
+
+                gameObjects.Add(item.gameObject);
+
+                for (var i = 0; i < item.childCount; i++)
+                {
+                    queue.Enqueue(item.GetChild(i));
+                }
+            }
+
+            return gameObjects;
+        }
         
         protected List<Component> GetComponentsInChild(Transform root, System.Type type)
         {
@@ -135,8 +160,15 @@ namespace DarkNaku.Attribute
         protected override void UpdateObjectReferenceValue(SerializedProperty property)
         {
             var target = property.serializedObject.targetObject as Component;
-            
-            property.objectReferenceValue = target.GetComponent(fieldInfo.FieldType);
+
+            if (fieldInfo.FieldType == typeof(GameObject))
+            {
+                property.objectReferenceValue = target.gameObject;
+            }
+            else
+            {
+                property.objectReferenceValue = target.GetComponent(fieldInfo.FieldType);
+            }
         }
     }
     
@@ -147,10 +179,21 @@ namespace DarkNaku.Attribute
         {
             var fieldType = fieldInfo.FieldType;
             var target = property.serializedObject.targetObject as Component;
-            var foundComponent = GetComponentsInChild(target.transform, fieldType)
-                .FirstOrDefault(component => IsEqualFieldName(component.name));
 
-            property.objectReferenceValue = foundComponent;
+            if (fieldType == typeof(GameObject))
+            {
+                var foundGameObject = GetGameObjectsInChild(target.transform)
+                    .FirstOrDefault(go => IsEqualFieldName(go.name));
+
+                property.objectReferenceValue = foundGameObject;
+            }
+            else
+            {
+                var foundComponent = GetComponentsInChild(target.transform, fieldType)
+                    .FirstOrDefault(component => IsEqualFieldName(component.name));
+
+                property.objectReferenceValue = foundComponent;
+            }
         }
     }
     
@@ -165,14 +208,32 @@ namespace DarkNaku.Attribute
             if (parent == null) return;
             
             var fieldType = fieldInfo.FieldType;
-            var components = parent.GetComponentsInParent(fieldType, true);
 
-            foreach (var component in components)
+            if (fieldType == typeof(GameObject))
             {
-                if (!IsEqualFieldName(component.name)) continue;
-                
-                property.objectReferenceValue = component;
-                break;
+                while (parent != null)
+                {
+                    if (IsEqualFieldName(parent.name)) 
+                    {
+                        property.objectReferenceValue = parent;
+                    }
+                    else
+                    {
+                        parent = parent.parent;
+                    }
+                }
+            }
+            else
+            {
+                var components = parent.GetComponentsInParent(fieldType, true);
+
+                foreach (var component in components)
+                {
+                    if (!IsEqualFieldName(component.name)) continue;
+
+                    property.objectReferenceValue = component;
+                    break;
+                }
             }
         }
     }
@@ -183,13 +244,31 @@ namespace DarkNaku.Attribute
         protected override void UpdateObjectReferenceValue(SerializedProperty property)
         {
             var fieldType = fieldInfo.FieldType;
-            var components = GameObject.FindObjectsOfType(fieldType, true) as Component[];
 
-            foreach (var component in components)
+            if (fieldType == typeof(GameObject))
             {
-                if (IsEqualFieldName(component.name))
+                var gameObjects = GameObject.FindObjectsOfType(fieldType, true) as GameObject[];
+
+                foreach (var go in gameObjects)
                 {
-                    property.objectReferenceValue = component;
+                    if (IsEqualFieldName(go.name))
+                    {
+                        property.objectReferenceValue = go;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                var components = GameObject.FindObjectsOfType(fieldType, true) as Component[];
+
+                foreach (var component in components)
+                {
+                    if (IsEqualFieldName(component.name))
+                    {
+                        property.objectReferenceValue = component;
+                        break;
+                    }
                 }
             }
         }
@@ -200,6 +279,7 @@ namespace DarkNaku.Attribute
     {
         private int _arraySize;
         private List<Component> _components;
+        private List<GameObject> _gameObjects;
         
         protected override void UpdateObjectReferenceValue(SerializedProperty property)
         {
@@ -214,20 +294,36 @@ namespace DarkNaku.Attribute
                 UpdateComponents(property, array);
             }
 
+            var fieldType = fieldInfo.FieldType.GetElementType();
             var index = System.Convert.ToInt32(path[(path.IndexOf('[') + 1)..].Replace("]", ""));
 
-            property.objectReferenceValue = _components[index];
+            if (fieldType == typeof(GameObject))
+            {
+                property.objectReferenceValue = _gameObjects[index];
+            }
+            else
+            {
+                property.objectReferenceValue = _components[index];
+            }
         }
 
         private void UpdateComponents(SerializedProperty property, SerializedProperty array)
         {
+            _gameObjects = new List<GameObject>();
             _components = new List<Component>();
             var fieldType = fieldInfo.FieldType.GetElementType();
             var target = property.serializedObject.targetObject as Component;
 
             if (Attribute.Name == null)
             {
-                _components = GetComponentsInChild(target.transform, fieldType);
+                if (fieldType == typeof(GameObject))
+                {
+                    _gameObjects = GetGameObjectsInChild(target.transform);
+                }
+                else
+                {
+                    _components = GetComponentsInChild(target.transform, fieldType);
+                }
             }
             else
             {
@@ -235,11 +331,26 @@ namespace DarkNaku.Attribute
 
                 if (root != null)
                 {
-                    _components = GetComponentsInChild(root, fieldType);
+                    if (fieldType == typeof(GameObject))
+                    {
+                        _gameObjects = GetGameObjectsInChild(root);
+                    }
+                    else
+                    {
+                        _components = GetComponentsInChild(root, fieldType);
+                    }
                 }
             }
 
-            _arraySize = _components.Count;
+            if (fieldType == typeof(GameObject))
+            {
+                _arraySize = _gameObjects.Count;
+            }
+            else
+            {
+                _arraySize = _components.Count;
+            }
+
             array.arraySize = _arraySize;
         }
     }
@@ -249,6 +360,7 @@ namespace DarkNaku.Attribute
     {
         private int _arraySize;
         private Component[] _components;
+        private GameObject[] _gameObjects;
 
         protected override void UpdateObjectReferenceValue(SerializedProperty property)
         {
@@ -274,7 +386,14 @@ namespace DarkNaku.Attribute
 
             if (Attribute.Name == null)
             {
-                _components = GameObject.FindObjectsOfType(fieldType, true) as Component[];
+                if (fieldType == typeof(GameObject))
+                {
+                    _gameObjects = GameObject.FindObjectsOfType(fieldType, true) as GameObject[];
+                }
+                else
+                {
+                    _components = GameObject.FindObjectsOfType(fieldType, true) as Component[];
+                }
             }
             else
             {
@@ -284,11 +403,26 @@ namespace DarkNaku.Attribute
 
                 if (root != null)
                 {
-                    _components = GetComponentsInChild(root, fieldType).ToArray();
+                    if (fieldType == typeof(GameObject))
+                    {
+                        _gameObjects = GetGameObjectsInChild(root).ToArray();
+                    }
+                    else
+                    {
+                        _components = GetComponentsInChild(root, fieldType).ToArray();
+                    }
                 }
             }
 
-            _arraySize = _components.Length;
+            if (fieldType == typeof(GameObject))
+            {
+                _arraySize = _gameObjects.Length;
+            }
+            else
+            {
+                _arraySize = _components.Length;
+            }
+
             array.arraySize = _arraySize;
         }
     }
